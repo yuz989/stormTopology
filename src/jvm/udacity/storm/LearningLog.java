@@ -1,9 +1,11 @@
 package udacity.storm;
 
-public class LearningLog
+import java.util.ArrayList;
+
+public class LearningLog<T1, T2>
 {
 	public Integer questionType;
 	public Integer page;
-	public Object  answer;
-	public Object  result;
+	public ArrayList<T1> answer;
+	public ArrayList<T2> result;
 }

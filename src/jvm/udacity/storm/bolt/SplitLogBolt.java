@@ -45,12 +45,13 @@ public class SplitLogBolt extends BaseRichBolt
 
       try
       {
+          ArrayList<Object> llogs = new ArrayList<Object>(); 
+
           JSONParser parser = new JSONParser();
           Object obj = parser.parse(llog_string);
           JSONObject jobj = (JSONObject) obj;
           JSONArray answerDataArray = (JSONArray) jobj.get("answerData"); 
 
-          ArrayList<LearningLog> llogs = new ArrayList<LearningLog>(); 
           for(int i=0; i<answerDataArray.size(); i++)
           { 
             JSONObject answerData = (JSONObject) answerDataArray.get(i);                         
@@ -59,65 +60,110 @@ public class SplitLogBolt extends BaseRichBolt
             Integer questionType = ((Long) answerData.get("questionType")).intValue(); 
             JSONArray answerJArray = (JSONArray) answerData.get("answer");  // 用戶上傳作答
             JSONArray resultJArray = (JSONArray) answerData.get("result");  // 對錯
-            
-            Object answer;  
-            LearningLog llog = new LearningLog();
+                                
+            if( questionType == 1 || questionType == 4 || questionType == 5 )  
+            {
+              LearningLog<Integer, Integer> llog = new LearningLog<Integer, Integer>();
+              llog.questionType = questionType;
+              llog.page = page;
 
-            // 連連看, 是非, 單字排列, 句子排列 --> 只統計對錯
-            if( questionType == 1 || questionType == 3 || questionType == 4 || questionType == 5 )  
+              llog.result =  new ArrayList<Integer>();
+              for(int j=0; j<resultJArray.size(); j++)
+                llog.result.add( ((Long)resultJArray.get(j)).intValue() );
+              
+              llogs.add(llog);
+            }             
+            else if( questionType == 3 || (questionType == 2 && answerData.get("isMultiple") == null) ) //單選題  
             {
-              answer =  new ArrayList<Integer>();
+              LearningLog<Integer, Integer> llog = new LearningLog<Integer, Integer>();
+              llog.questionType = questionType;
+              llog.page = page;
+
+              llog.answer =  new ArrayList<Integer>();
               for(int j=0; j<answerJArray.size(); j++)
-                ((ArrayList<Integer>) answer).add( ((Long)resultJArray.get(j)).intValue() );
+                llog.answer.add( ((Long)answerJArray.get(j)).intValue() );
+              
+              llogs.add(llog);
             }
-            else if( questionType == 2 && answerData.get("isMultiple") == null ) //單選題  --> 統計答案
-            {
-              answer =  new ArrayList<Integer>();
-              for(int j=0; j<answerJArray.size(); j++)
-                ((ArrayList<Integer>) answer).add( ((Long)answerData.get(j)).intValue() );
-            }
-            else if(questionType == 6) // 克漏字 --> 統計對錯            
-            {
-              answer =  new ArrayList<ArrayList<Integer>>();
-              for(int j=0; j<answerJArray.size(); j++)
+            else if( questionType == 6 ) // 克漏字 --> 統計對錯            
+            { 
+              LearningLog<Integer, ArrayList<Integer>> llog = new LearningLog<Integer, ArrayList<Integer>>();
+              llog.questionType = questionType;
+              llog.page = page;
+
+              llog.result = new ArrayList<ArrayList<Integer>>();
+              for(int j=0; j<resultJArray.size(); j++)
               {
-                ( (ArrayList<ArrayList<Integer>>) answer).add( new ArrayList<Integer>() );                              
-                JSONArray subAnsJarray = (JSONArray) resultJArray.get(j);
-                for(int k=0; k<subAnsJarray.size(); k++)
-                  ( (ArrayList<ArrayList<Integer>>) answer).get(j).add( ((Long)subAnsJarray.get(k)).intValue() );
+                llog.result.add( new ArrayList<Integer>() );                              
+                JSONArray resultItemJArray = (JSONArray) resultJArray.get(j);
+                for(int k=0; k<resultItemJArray.size(); k++)
+                  llog.result.get(j).add( ((Long)resultItemJArray.get(k)).intValue() );
               }
+
+              llogs.add(llog);
             }
-            else  // 複選 & 理解力測驗 --> 統計答案 & 對錯
+            else if( questionType == 2 && answerData.get("isMultiple") != null )   //複選
             {
-              continue;
-              /*if(answerData.get("isMultiple") != null)
+              LearningLog<ArrayList<Integer>, Integer> llog = new LearningLog<ArrayList<Integer>, Integer>();
+              llog.questionType = 8;  // !!
+              llog.page = page;          
+
+              //llog.answer = new ArrayList<ArrayList<Integer>>();
+              llog.result = new ArrayList<Integer>();
+              for(int j=0; j<resultJArray.size(); j++)
               {
-                  questionType = 8; // multiple selection
-              }*/           
-            }
+                llog.result.add( ((Long)resultJArray.get(j)).intValue() );
+                //llog.answer.add( new ArrayList<Integer>() );                                                                                 
+              }
 
-            llog.page = page;
-            llog.questionType = questionType;
-            llog.answer = answer; 
-            llogs.add(llog);            
+              llogs.add(llog);
+            }            
+            else if( questionType == 7 )
+            {
+              LearningLog<ArrayList<Integer>, ArrayList<Integer>> llog = new LearningLog<ArrayList<Integer>, ArrayList<Integer>>();
+              llog.questionType = questionType;
+              llog.page = page;
+
+              llog.answer = new ArrayList<ArrayList<Integer>>();
+              llog.result = new ArrayList<ArrayList<Integer>>();
+
+              for(int j=0; j<resultJArray.size(); j++)
+              {
+                llog.answer.add( new ArrayList<Integer>() );                              
+                llog.result.add( new ArrayList<Integer>() );                 
+               
+                JSONArray resultItemJArray = (JSONArray) resultJArray.get(j);
+                for(int k=0; k<resultItemJArray.size(); k++)
+                {
+                  llog.answer.get(j).add(0);
+                  llog.result.get(j).add( ((Long)resultItemJArray.get(k)).intValue() );                
+                }
+
+                JSONArray answerItemJArray = (JSONArray) answerJArray.get(j);
+                for(int k=0; k<answerItemJArray.size(); k++)
+                {
+                    JSONArray subAnsItemJArray = (JSONArray) answerItemJArray.get(k);    
+                    for(int l=0; l<subAnsItemJArray.size(); l++)
+                    {
+                      if( subAnsItemJArray.get(l) == "True")
+                      {
+                        llog.answer.get(j).add(l+1);  
+                        break;
+                      }
+                    }
+                }
+              }
+
+              llogs.add(llog);
+            }  
+
+
           }
-
-          /*System.out.println("@@@@@@@@\n\n\n\n\n\n" );
-          for(int x=0; x< llogs.size(); ++x)
-          {
-            System.out.println("page:" + String.valueOf(llogs.get(x).page) + " qtype:" + String.valueOf(llogs.get(x).questionType) ); 
-            ArrayList<Integer> ans = (ArrayList<Integer>) llogs.get(x).answer;
-            for(int y=0; y< ans.size(); ++y)
-              System.out.print( String.valueOf( ans.get(y) ) + ", " );
-            System.out.print("\n");
-          }
-          System.out.println("\n\n\n\n\n\n@@@@@@@@" );*/
-
           _collector.emit( new Values(tcode, identity, llogs) );
       }
       catch(Exception exp) 
       { 
-          System.out.println(exp.toString() + "\n\n\n\n\n\n\n");
+          System.out.println(exp.toString() + "\n\n\n\n\n");
       }
 
     }

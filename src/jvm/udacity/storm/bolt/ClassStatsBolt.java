@@ -50,43 +50,47 @@ public class ClassStatsBolt extends BaseRichBolt
     {
       String tcode = tuple.getStringByField("tcode");
       String identity = tuple.getStringByField("identity");
-      ArrayList<LearningLog> parsed_llogs = (ArrayList<LearningLog>) tuple.getValueByField("parsed_llogs");
-
-          /*System.out.println("IdentityStatsBolt@@@@@@@@\n\n\n\n" );
-          for(int x=0; x< parsed_llogs.size(); ++x)
-          {
-            System.out.println("page:" + String.valueOf(parsed_llogs.get(x).page) + " qtype:" + String.valueOf(parsed_llogs.get(x).questionType) ); 
-            ArrayList<Integer> ans = (ArrayList<Integer>) parsed_llogs.get(x).answer;
-            for(int y=0; y< ans.size(); ++y)
-              System.out.print( String.valueOf( ans.get(y) ) + ", " );
-            System.out.print("\n");
-          }
-          System.out.println("\n\n\n\n@@@@@@@@IdentityStatsBolt" );*/
-
+      ArrayList<Object> parsed_llogs = (ArrayList<Object>) tuple.getValueByField("parsed_llogs");
+        
       // for each chapter
       for(int i=0; i<parsed_llogs.size(); i++)
       {
-        LearningLog llog = parsed_llogs.get(i);    
-        Integer page = llog.page;
-        Integer questionType = llog.questionType;
-        ArrayList<Object> answer = (ArrayList<Object>) llog.answer;
-        
-        String key_class_stat = "rb." + tcode + ".stats";
-        String key_identity_stat = "rb." + tcode + "." + identity;
+          LearningLog<Object, Object> llog = (LearningLog<Object, Object>) parsed_llogs.get(i);    
+          Integer page = llog.page;
+          Integer questionType = llog.questionType;
+          
+          String key_class_stat = "rb." + tcode + ".stats";
+          String key_identity_stat = "rb." + tcode + "." + identity;
 
-        // for each question
-        for(int j=0;j<answer.size();j++){ 
+          /**
+            * 連連看    : 1    T or F        result            -- ok 
+            * 句子排列  : 4    T or F         result            -- ok
+            * 單字排列  : 5    T or F         result            -- ok
+            * 克漏字    : 6    T or F         result            -- ok   
+            * 單擇      : 2    num_answer    answer             -- ok
+            * 是非      : 3    T or F        answer             -- ok
+            * 理解力    : 7    T or F         result, answer
+            * 複選      : 8                   result, answer
+          **/
+          if( questionType <= 5  || questionType == 8 ) // 複選題暫時放這邊  
+          {
 
-            String page_offset = String.valueOf( page + j ); 
-
-            if( questionType <= 5 ) // 其它題型                   
-            {
-              String ans = String.valueOf( (Integer) answer.get(j));  
-              String old_ans = redis.hget(key_identity_stat, page_offset);
+            ArrayList<Object> answer;
+            if( questionType == 2 || questionType == 3 )
+              answer = llog.answer;
+            else
+              answer = llog.result; 
             
+            for(int j=0; j<answer.size(); j++)
+            { 
+              String page_offset = String.valueOf( page + j );
+
+              String ans = String.valueOf( (Integer) answer.get(j) );  
+              String old_ans = redis.hget(key_identity_stat, page_offset);
+          
               if(old_ans==null)  
               {
-                if(answer.get(j) != 0)
+                if( (Integer) answer.get(j) != 0)
                 {
                   redis.hincrby(key_class_stat, page_offset + "." + ans, (long) 1);
                   redis.hset(key_identity_stat, page_offset, ans);
@@ -95,7 +99,7 @@ public class ClassStatsBolt extends BaseRichBolt
               else if(ans != old_ans)
               {
                 redis.hincrby(key_class_stat, page_offset + "." + old_ans, (long) -1);
-                if(answer.get(j) != 0)
+                if( (Integer) answer.get(j) != 0)
                 {
                   redis.hset(key_identity_stat, page_offset, ans);
                   redis.hincrby(key_class_stat, page_offset + "." + ans, (long) 1);
@@ -104,73 +108,80 @@ public class ClassStatsBolt extends BaseRichBolt
                 {
                   redis.hdel(key_identity_stat, page_offset);
                 }
-              }                 
+              }                              
             }
-            else // 克漏字, 理解力, 複選
-            {
-              ArrayList<Integer> ans = (ArrayList<Integer>) answer.get(j);
 
-              if(questionType == 6) // 克漏字
-              {
-                String old_ans = redis.hget(key_identity_stat, page_offset);
-                String new_ans;
-                
-                Boolean torf = true;
-                Boolean empty = true;  
-                for(int k=0; k<ans.size(); k++)
-                {
-                  if(ans.get(k) != 1)
-                    torf = false;
-                  if(ans.get(k) != 0)
-                    empty = false; 
-                }
-                new_ans = String.valueOf( ( torf ) ? 1 : ( (empty) ? 0 : 2) );
+          }  
 
-                if(old_ans==null)  
-                {
-                  if(new_ans != "0")
-                  {
-                    redis.hset(key_identity_stat, page_offset, new_ans);
-                    redis.hincrby(key_class_stat, page_offset + "." + new_ans, (long) 1);
-                  }
-                }
-                else if(new_ans != old_ans)
-                {
-                  redis.hincrby(key_class_stat, page_offset + "." + old_ans, (long) -1);
-                  if(new_ans != "0")
-                  {
-                    redis.hincrby(key_class_stat, page_offset + "." + new_ans, (long) 1);
-                    redis.hset(key_identity_stat, page_offset, new_ans);
-                  }
-                  else
-                  {
-                    redis.hdel(key_identity_stat, page_offset);
-                  }
-                }               
+
+          else if( questionType == 6 )
+          {
+            
+            ArrayList<Object> result = llog.result;
+          
+            for(int j=0; j<result.size(); j++)
+            { 
+
+              String page_offset = String.valueOf( page + j );          
+
+              ArrayList<Integer> ans = (ArrayList<Integer>) result.get(j);
+              String old_ans = redis.hget(key_identity_stat, page_offset);
+              String new_ans;
               
-              }
-              else if(questionType == 7) // 理解力測驗
+              Boolean torf = true;
+              Boolean empty = true;  
+              for(int k=0; k<ans.size(); k++)
               {
-                answer =  new ArrayList<ArrayList<Integer>>();
-                for(int j=0; j<answerJArray.size(); j++)
+                if(ans.get(k) != 1)
+                  torf = false;
+                if(ans.get(k) != 0)
+                  empty = false; 
+              }
+              new_ans = String.valueOf( ( torf ) ? 1 : ( (empty) ? 0 : 2) );
+
+              if(old_ans==null)  
+              {
+                if(new_ans != "0")
                 {
-                  ( (ArrayList<ArrayList<Integer>>) answer).add( new ArrayList<Integer>() );                              
-                  JSONArray subAnsJarray = (JSONArray) resultJArray.get(j);
-                  for(int k=0; k<subAnsJarray.size(); k++)
-                    ( (ArrayList<ArrayList<Integer>>) answer).get(j).add( ((Long)subAnsJarray.get(k)).intValue() );
+                  redis.hset(key_identity_stat, page_offset, new_ans);
+                  redis.hincrby(key_class_stat, page_offset + "." + new_ans, (long) 1);
                 }
               }
-              else if(questionType == 8) //複選題
+              else if(new_ans != old_ans)
               {
-                continue;
+                redis.hincrby(key_class_stat, page_offset + "." + old_ans, (long) -1);
+                if(new_ans != "0")
+                {
+                  redis.hincrby(key_class_stat, page_offset + "." + new_ans, (long) 1);
+                  redis.hset(key_identity_stat, page_offset, new_ans);
+                }
+                else
+                {
+                  redis.hdel(key_identity_stat, page_offset);
+                }
               }
-              else
-              {
-                continue; // skip
-              }
-            }     
-        }
-      }
+            }  
+
+          }
+
+          else if( questionType == 7 )
+          {
+             
+
+          }
+
+
+          //else if( questionType == 8 )
+          //{
+          //  continue;
+          //}
+
+
+          else
+          {
+            continue;
+          }
+      }        
     }
     catch(Exception exp)
     {
