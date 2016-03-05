@@ -15,6 +15,8 @@ import backtype.storm.utils.Utils;
 
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import com.lambdaworks.redis.RedisClient;
 import com.lambdaworks.redis.RedisConnection;
@@ -72,7 +74,7 @@ public class ClassStatsBolt extends BaseRichBolt
             * 理解力    : 7    T or F         result, answer
             * 複選      : 8                   result, answer
           **/
-          if( questionType <= 5  || questionType == 8 ) // 複選題暫時放這邊  
+          if( questionType <= 5 ) 
           {
 
             ArrayList<Object> answer;
@@ -169,12 +171,66 @@ public class ClassStatsBolt extends BaseRichBolt
              
 
           }
+          else if( questionType == 8 )
+          {
+            System.out.println("\n\n\n\n\n\n\n multi select stats \n\n\n\n\n\n\n");
+          
+            for(int j=0; j<llog.result.size(); j++)
+            {
+              String page_offset = String.valueOf( page + j );
+              String new_result = String.valueOf( (Integer) llog.result.get(j) );
+              String old_result = redis.hget( key_identity_stat, page_offset + ".R" );
 
+              // slow !!
+              ArrayList<Integer> ansSubArray = (ArrayList<Integer>) llog.answer.get(j);
+              if(old_result == null)  // answer does not exist
+              { 
+                if(new_result != "0")
+                {
+                  redis.hset(key_identity_stat, page_offset + ".R", new_result);
+                  redis.hincrby(key_class_stat, page_offset + ".R." + new_result, (long) 1);                  
 
-          //else if( questionType == 8 )
-          //{
-          //  continue;
-          //}
+                  String storedString = "";                  
+                  for(int k=0; k<ansSubArray.size(); k++)
+                  {
+                    storedString += String.valueOf(ansSubArray.get(k)) + ";";
+                    redis.hincrby(key_class_stat, page_offset + "." + String.valueOf(ansSubArray.get(k)), (long) 1);
+                  }
+                  redis.hset(key_identity_stat, page_offset, storedString);
+                }
+              }
+              else if(old_result != new_result || (new_result == old_result && new_result != "1") )
+              {                 
+                if( old_result != new_result )
+                {                  
+                  redis.hset(key_identity_stat, page_offset + ".R", new_result);                
+                  redis.hincrby(key_class_stat, page_offset + ".R." + old_result, (long) -1);                  
+                  redis.hincrby(key_class_stat, page_offset + ".R." + new_result, (long) 1);                  
+                }
+
+                String str_old_ans = redis.hget(key_identity_stat, page_offset);                
+                List<String> split_old_ans = new ArrayList<String>(Arrays.asList(str_old_ans.split(";")));                                   
+
+                // decrement old
+                for(int k=0; k<split_old_ans.size(); k++)
+                {
+                  redis.hincrby(key_class_stat, page_offset + "." + split_old_ans.get(k), (long) -1);                  
+                }
+
+                // increment new 
+                String storedString = "";                  
+                for(int k=0; k<ansSubArray.size(); k++)
+                {
+                  storedString += String.valueOf(ansSubArray.get(k)) + ";";
+                  redis.hincrby(key_class_stat, page_offset + "." + String.valueOf(ansSubArray.get(k)), (long) 1);
+                }
+                redis.hset(key_identity_stat, page_offset, storedString);
+
+              }              
+
+            }
+            
+          }
 
 
           else

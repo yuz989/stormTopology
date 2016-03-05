@@ -17,7 +17,7 @@ public class StudentLogSpout extends BaseRichSpout {
   
   SpoutOutputCollector _collector;
   RedisConnection<String,String> redis;
-  String connectionString;
+  String connectionString = "52.74.196.202";
 
   public StudentLogSpout(String connectionString)
   {
